@@ -33,7 +33,78 @@ document.addEventListener('DOMContentLoaded', () => {
     return R * c;
   }
 
-  function updateMap(userLat, userLon) {
+  const RETRY_DELAYS = [1000, 2000, 4000]; // Retry delays in milliseconds
+  const RATE_LIMIT_DELAY = 1500; // Minimum time between requests
+  let lastRequestTime = 0;
+
+  async function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function getAddress(lat, lon) {
+    // Check cache first
+    const cacheKey = `address_${lat}_${lon}`;
+    const cached = await new Promise(resolve => chrome.storage.local.get(cacheKey, result => resolve(result[cacheKey])));
+    if (cached) return cached;
+
+    // Rate limiting
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
+      await sleep(RATE_LIMIT_DELAY - timeSinceLastRequest);
+    }
+
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`;
+    
+    // Try multiple times with increasing delays
+    for (let i = 0; i <= RETRY_DELAYS.length; i++) {
+      try {
+        lastRequestTime = Date.now();
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'UkraineShelterFinder/1.3',
+            'Accept-Language': 'uk,en'
+          },
+          cache: 'no-cache'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data || !data.address) {
+          throw new Error('Invalid response data');
+        }
+
+        const addr = data.address;
+        const street = addr.road || addr.street || '';
+        const houseNumber = addr.house_number || '';
+        const city = addr.city || addr.town || addr.village || '';
+        const country = addr.country || '';
+
+        let fullAddress = [
+          [street, houseNumber].filter(Boolean).join(' '),
+          city,
+          country
+        ].filter(Boolean).join(', ');
+
+        const address = fullAddress || `Coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        chrome.storage.local.set({ [cacheKey]: address });
+        return address;
+
+      } catch (error) {
+        console.warn(`Geocoding attempt ${i + 1} failed:`, error);
+        if (i < RETRY_DELAYS.length) {
+          await sleep(RETRY_DELAYS[i]);
+          continue;
+        }
+        return `Location ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+      }
+    }
+  }
+
+  async function updateMap(userLat, userLon) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('map').style.display = 'block';
     document.getElementById('gpsButton').style.display = 'block';
@@ -42,34 +113,41 @@ document.addEventListener('DOMContentLoaded', () => {
     L.marker([userLat, userLon], { icon: blueDropIcon }).addTo(map)
       .bindPopup('Your Location').openPopup();
 
-    chrome.storage.local.get('shelters', data => {
+    chrome.storage.local.get('shelters', async data => {
       console.log('Stored shelters:', data.shelters);
       if (data.shelters && data.shelters.length > 0) {
         const radius = 50;
         const nearbyShelters = data.shelters.filter(shelter => {
           const distance = getDistance(userLat, userLon, shelter.lat, shelter.lon);
-          console.log(`Shelter ${shelter.id}: Distance ${distance.toFixed(2)} km, Address: ${shelter.address}`);
+          console.log(`Shelter ${shelter.id}: Distance ${distance.toFixed(2)} km`);
           return distance <= radius;
         });
         console.log('Nearby shelters:', nearbyShelters);
 
         if (nearbyShelters.length > 0) {
-          nearbyShelters.forEach(shelter => {
-            const marker = L.marker([shelter.lat, shelter.lon], { icon: redDropIcon }).addTo(map);
-            let popupContent = `<b>Address:</b> ${shelter.address}<br>`;
-            if (shelter.tags.bunker_type === 'bomb_shelter') {
-              popupContent += 'Type: Bomb Shelter<br>';
-            } else if (shelter.tags.social_facility === 'shelter') {
-              popupContent += 'Type: Social Shelter<br>';
-            } else {
-              popupContent += 'Type: Shelter<br>';
+          for (const shelter of nearbyShelters) {
+            try {
+              const address = await getAddress(shelter.lat, shelter.lon);
+              const marker = L.marker([shelter.lat, shelter.lon], { icon: redDropIcon }).addTo(map);
+              let popupContent = `<b>Address:</b> ${address}<br>`;
+              if (shelter.tags.bunker_type === 'bomb_shelter') {
+                popupContent += 'Type: Bomb Shelter<br>';
+              } else if (shelter.tags.social_facility === 'shelter') {
+                popupContent += 'Type: Social Shelter<br>';
+              } else {
+                popupContent += 'Type: Shelter<br>';
+              }
+              if (shelter.tags.name) {
+                popupContent += `<b>Name:</b> ${shelter.tags.name}<br>`;
+              }
+              popupContent += `ID: ${shelter.id}<br>Coordinates: ${shelter.lat.toFixed(4)}, ${shelter.lon.toFixed(4)}`;
+              marker.bindPopup(popupContent);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Throttle requests
+            } catch (error) {
+              console.error('Error processing shelter:', error);
+              continue; // Skip this shelter and continue with others
             }
-            if (shelter.tags.name) {
-              popupContent += `<b>Name:</b> ${shelter.tags.name}<br>`;
-            }
-            popupContent += `ID: ${shelter.id}<br>Coordinates: ${shelter.lat.toFixed(4)}, ${shelter.lon.toFixed(4)}`;
-            marker.bindPopup(popupContent);
-          });
+          }
         } else {
           alert('No shelters found within 50 km of your location.');
         }
