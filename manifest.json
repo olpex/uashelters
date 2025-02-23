@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Ukraine Bomb Shelter Finder",
+  "version": "1.1", // Increment for resubmission
+  "description": "Find nearby bomb shelters in Ukraine",
+  "permissions": [
+    "storage",
+    "alarms",
+    "geolocation"
+  ],
+  "host_permissions": [
+    "https://overpass-api.de/*",
+    "https://nominatim.openstreetmap.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Bomb Shelter Map"
+  }
+}
