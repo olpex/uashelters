@@ -69,12 +69,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
         const data = await response.json();
         if (!data || !data.address) {
-          throw new Error('Invalid response data');
+          console.error('Invalid response:', data);
+          throw new Error('Invalid address data received');
         }
 
         const addr = data.address;
@@ -94,11 +96,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return address;
 
       } catch (error) {
-        console.warn(`Geocoding attempt ${i + 1} failed:`, error);
+        const attempt = i + 1;
+        const retryDelay = RETRY_DELAYS[i];
+        console.error(`Geocoding attempt ${attempt} failed for coordinates [${lat}, ${lon}]:`, {
+          error: error.message,
+          statusCode: error.response?.status,
+          retryDelay: retryDelay,
+          attemptNumber: attempt
+        });
+
         if (i < RETRY_DELAYS.length) {
-          await sleep(RETRY_DELAYS[i]);
+          await sleep(retryDelay);
           continue;
         }
+        
+        // If all retries failed, return coordinates and log final error
+        console.error('All geocoding attempts failed:', {
+          coordinates: [lat, lon],
+          totalAttempts: attempt,
+          finalError: error.message
+        });
+        
         return `Location ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
       }
     }
