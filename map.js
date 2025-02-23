@@ -98,30 +98,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
         const errorDetails = {
-          timestamp: new Date().toISOString(),
-          coordinates: { lat, lon },
-          attempt,
-          retryDelay,
-          error: {
-            message: error.message,
-            type: error.name,
-            status: error.response?.status
+          request: {
+            url,
+            coordinates: { lat, lon },
+            timestamp: new Date().toISOString()
           },
-          url: url
+          error: {
+            name: error.name,
+            message: error.message,
+            status: error.response?.status || 'unknown',
+            stack: error.stack
+          },
+          attempt: {
+            number: attempt,
+            maxAttempts: RETRY_DELAYS.length + 1,
+            delayMs: retryDelay,
+            remaining: RETRY_DELAYS.length - i
+          }
         };
 
-        // Log structured error data
-        console.error('Geocoding request failed:', errorDetails);
+        // Log structured error with location context
+        console.error(`Geocoding failed (Attempt ${attempt}/${RETRY_DELAYS.length + 1}):`, {
+          ...errorDetails,
+          location: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+          nextRetry: retryDelay ? `in ${retryDelay}ms` : 'no more retries'
+        });
 
         if (i < RETRY_DELAYS.length) {
           await sleep(retryDelay);
           continue;
         }
 
-        // Final attempt failed
-        console.error('All geocoding attempts exhausted:', {
-          ...errorDetails,
-          totalAttempts: RETRY_DELAYS.length + 1
+        // Final failure logging
+        console.error('Geocoding permanently failed:', {
+          coordinates: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+          attempts: attempt,
+          finalError: error.message,
+          suggestedAction: 'Using coordinates as fallback'
         });
         
         return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
