@@ -97,51 +97,52 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
+        const timestamp = new Date().toISOString();
         
-        // Create detailed error log
-        console.group(`🔍 Geocoding Request - Attempt ${attempt}/${RETRY_DELAYS.length + 1}`);
+        console.group(`🔴 Geocoding Error Report [${timestamp}]`);
         
-        // Log timing and request info
-        console.info('📌 Request Info:', {
-            timestamp: new Date().toISOString(),
-            service: 'Nominatim',
-            endpoint: 'reverse geocoding',
-            coordinates: `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+        // Request Context
+        console.info({
+            event: 'Geocoding Request Failed',
+            attempt: `${attempt} of ${RETRY_DELAYS.length + 1}`,
+            location: {
+                latitude: lat.toFixed(6),
+                longitude: lon.toFixed(6),
+            },
+            service: {
+                name: 'Nominatim',
+                endpoint: url.split('?')[0]
+            }
         });
 
-        // Log detailed error state
-        console.error('🚨 Error Details:', {
-            name: error.name,
+        // Detailed Error Information
+        console.error({
+            errorType: error.constructor.name,
             message: error.message,
-            status: error.response?.status || 'No Response',
-            attemptNumber: attempt,
-            maxAttempts: RETRY_DELAYS.length + 1,
-            retryDelay: retryDelay ? `${retryDelay}ms` : 'None'
+            httpStatus: error.response?.status,
+            timestamp: timestamp,
+            requestMetadata: {
+                retryCount: attempt,
+                maxRetries: RETRY_DELAYS.length + 1,
+                nextRetryDelay: retryDelay || 'None'
+            }
         });
-
-        console.debug('🔧 Technical Details:', {
-            url: url.split('?')[0],
-            remainingRetries: RETRY_DELAYS.length - i,
-            cacheStatus: cached ? 'Miss' : 'Not Checked',
-            rateLimitDelay: RATE_LIMIT_DELAY
-        });
-
-        console.groupEnd();
 
         if (i < RETRY_DELAYS.length) {
-            console.info(`⏳ Retrying in ${retryDelay}ms...`);
+            console.info(`↻ Scheduling retry in ${retryDelay}ms...`);
             await sleep(retryDelay);
+            console.groupEnd();
             continue;
         }
 
-        // Final failure with detailed context
-        console.warn('📍 Fallback to Coordinates:', {
-            reason: 'All geocoding attempts failed',
-            location: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+        console.warn({
+            status: 'Final Failure',
             totalAttempts: attempt,
-            suggestedAction: 'Using raw coordinates as location'
+            fallback: `Using coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+            recommendation: 'Consider checking network connectivity or service status'
         });
-        
+
+        console.groupEnd();
         return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       }
     }
