@@ -97,44 +97,43 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
-        const errorDetails = {
-          request: {
-            url,
-            coordinates: { lat, lon },
-            timestamp: new Date().toISOString()
+        
+        // Create detailed error report
+        const errorReport = {
+          requestInfo: {
+            url: url.replace(/\?.*$/, '...'), // Hide query params for security
+            method: 'GET',
+            timestamp: new Date().toISOString(),
+            targetLocation: `${lat.toFixed(6)}, ${lon.toFixed(6)}`
           },
-          error: {
-            name: error.name,
+          errorDetails: {
+            type: error.name,
             message: error.message,
-            status: error.response?.status || 'unknown',
-            stack: error.stack
+            status: error.response?.status || 'Unknown',
+            code: error.code || 'Unknown'
           },
-          attempt: {
-            number: attempt,
-            maxAttempts: RETRY_DELAYS.length + 1,
-            delayMs: retryDelay,
-            remaining: RETRY_DELAYS.length - i
+          retryStatus: {
+            currentAttempt: attempt,
+            totalAttempts: RETRY_DELAYS.length + 1,
+            nextRetryDelay: retryDelay || 'None',
+            remainingRetries: RETRY_DELAYS.length - i
           }
         };
 
-        // Log structured error with location context
-        console.error(`Geocoding failed (Attempt ${attempt}/${RETRY_DELAYS.length + 1}):`, {
-          ...errorDetails,
-          location: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
-          nextRetry: retryDelay ? `in ${retryDelay}ms` : 'no more retries'
-        });
+        // Log current attempt status
+        console.error(`Geocoding attempt ${attempt} of ${RETRY_DELAYS.length + 1} failed for [${errorReport.requestInfo.targetLocation}]`, errorReport);
 
         if (i < RETRY_DELAYS.length) {
           await sleep(retryDelay);
           continue;
         }
 
-        // Final failure logging
-        console.error('Geocoding permanently failed:', {
-          coordinates: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
-          attempts: attempt,
-          finalError: error.message,
-          suggestedAction: 'Using coordinates as fallback'
+        // Log final failure with summary
+        console.error('Geocoding exhausted all retry attempts:', {
+          location: errorReport.requestInfo.targetLocation,
+          totalAttempts: attempt,
+          finalError: errorReport.errorDetails.message,
+          fallback: 'Using coordinates as location'
         });
         
         return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
