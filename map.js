@@ -98,51 +98,49 @@ document.addEventListener('DOMContentLoaded', () => {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
         const timestamp = new Date().toISOString();
-        
-        console.group(`🔴 Geocoding Error Report [${timestamp}]`);
-        
-        // Request Context
-        console.info({
-            event: 'Geocoding Request Failed',
-            attempt: `${attempt} of ${RETRY_DELAYS.length + 1}`,
-            location: {
+
+        // Create structured error log
+        const errorLog = {
+            type: 'GeocodeError',
+            timestamp,
+            requestData: {
                 latitude: lat.toFixed(6),
                 longitude: lon.toFixed(6),
+                baseUrl: url.split('?')[0],
+                attempt: `${attempt}/${RETRY_DELAYS.length + 1}`
             },
-            service: {
-                name: 'Nominatim',
-                endpoint: url.split('?')[0]
+            error: {
+                name: error.constructor.name,
+                message: error.message,
+                statusCode: error.response?.status || 'Unknown',
+                responseText: error.response?.statusText
+            },
+            retryInfo: {
+                currentAttempt: attempt,
+                maxAttempts: RETRY_DELAYS.length + 1,
+                nextDelayMs: retryDelay || null,
+                remainingRetries: RETRY_DELAYS.length - i
             }
-        });
+        };
 
-        // Detailed Error Information
-        console.error({
-            errorType: error.constructor.name,
-            message: error.message,
-            httpStatus: error.response?.status,
-            timestamp: timestamp,
-            requestMetadata: {
-                retryCount: attempt,
-                maxRetries: RETRY_DELAYS.length + 1,
-                nextRetryDelay: retryDelay || 'None'
-            }
-        });
+        // Log error with metadata
+        console.group(`Geocoding Error (${errorLog.requestData.attempt})`);
+        console.error(errorLog);
+        console.groupEnd();
 
         if (i < RETRY_DELAYS.length) {
-            console.info(`↻ Scheduling retry in ${retryDelay}ms...`);
             await sleep(retryDelay);
-            console.groupEnd();
             continue;
         }
 
+        // Log final failure
         console.warn({
-            status: 'Final Failure',
-            totalAttempts: attempt,
-            fallback: `Using coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`,
-            recommendation: 'Consider checking network connectivity or service status'
+            finalError: true,
+            coordinates: [lat, lon],
+            attempts: attempt,
+            resolution: 'Using coordinates as fallback'
         });
 
-        console.groupEnd();
         return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       }
     }
