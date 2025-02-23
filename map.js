@@ -33,6 +33,42 @@ document.addEventListener('DOMContentLoaded', () => {
     return R * c;
   }
 
+  // Add geocoding function
+  async function getAddress(lat, lon) {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'UkraineShelterFinder/1.3',
+            'Accept-Language': 'uk,en'
+          }
+        }
+      );
+
+      if (!response.ok) throw new Error('Geocoding failed');
+      const data = await response.json();
+      
+      const addr = data.address || {};
+      const parts = [];
+      
+      if (addr.road || addr.street) {
+        parts.push(addr.road || addr.street);
+        if (addr.house_number) {
+          parts.push(addr.house_number);
+        }
+      }
+      if (addr.city || addr.town || addr.village) {
+        parts.push(addr.city || addr.town || addr.village);
+      }
+      
+      return parts.join(', ') || `Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return `Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    }
+  }
+
   function updateMap(userLat, userLon) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('map').style.display = 'block';
@@ -42,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
     L.marker([userLat, userLon], { icon: blueDropIcon }).addTo(map)
       .bindPopup('Your Location').openPopup();
 
-    chrome.storage.local.get('shelters', data => {
+    chrome.storage.local.get('shelters', async data => {
       console.log('Stored shelters:', data.shelters);
       if (data.shelters && data.shelters.length > 0) {
         const radius = 50;
@@ -54,22 +90,33 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Nearby shelters:', nearbyShelters);
 
         if (nearbyShelters.length > 0) {
-          nearbyShelters.forEach(shelter => {
-            const marker = L.marker([shelter.lat, shelter.lon], { icon: redDropIcon }).addTo(map);
-            let popupContent = `<b>Address:</b> ${shelter.address}<br>`;
-            if (shelter.tags.bunker_type === 'bomb_shelter') {
-              popupContent += 'Type: Bomb Shelter<br>';
-            } else if (shelter.tags.social_facility === 'shelter') {
-              popupContent += 'Type: Social Shelter<br>';
-            } else {
-              popupContent += 'Type: Shelter<br>';
+          for (const shelter of nearbyShelters) {
+            try {
+              // Get address for each shelter
+              const address = await getAddress(shelter.lat, shelter.lon);
+              const marker = L.marker([shelter.lat, shelter.lon], { icon: redDropIcon }).addTo(map);
+              
+              let popupContent = `<b>Address:</b> ${address}<br>`;
+              if (shelter.tags.bunker_type === 'bomb_shelter') {
+                popupContent += 'Type: Bomb Shelter<br>';
+              } else if (shelter.tags.social_facility === 'shelter') {
+                popupContent += 'Type: Social Shelter<br>';
+              } else {
+                popupContent += 'Type: Shelter<br>';
+              }
+              if (shelter.tags.name) {
+                popupContent += `<b>Name:</b> ${shelter.tags.name}<br>`;
+              }
+              popupContent += `ID: ${shelter.id}`;
+              
+              marker.bindPopup(popupContent);
+              
+              // Add delay between requests to avoid rate limiting
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (error) {
+              console.error('Error processing shelter:', error);
             }
-            if (shelter.tags.name) {
-              popupContent += `<b>Name:</b> ${shelter.tags.name}<br>`;
-            }
-            popupContent += `ID: ${shelter.id}<br>Coordinates: ${shelter.lat.toFixed(4)}, ${shelter.lon.toFixed(4)}`;
-            marker.bindPopup(popupContent);
-          });
+          }
         } else {
           alert('No shelters found within 50 km of your location.');
         }
