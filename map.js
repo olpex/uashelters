@@ -56,7 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`;
     
-    // Try multiple times with increasing delays
     for (let i = 0; i <= RETRY_DELAYS.length; i++) {
       try {
         lastRequestTime = Date.now();
@@ -69,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = await response.text().catch(() => 'No error text available');
           throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
@@ -98,26 +97,34 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
-        console.error(`Geocoding attempt ${attempt} failed for coordinates [${lat}, ${lon}]:`, {
-          error: error.message,
-          statusCode: error.response?.status,
-          retryDelay: retryDelay,
-          attemptNumber: attempt
-        });
+        const errorDetails = {
+          timestamp: new Date().toISOString(),
+          coordinates: { lat, lon },
+          attempt,
+          retryDelay,
+          error: {
+            message: error.message,
+            type: error.name,
+            status: error.response?.status
+          },
+          url: url
+        };
+
+        // Log structured error data
+        console.error('Geocoding request failed:', errorDetails);
 
         if (i < RETRY_DELAYS.length) {
           await sleep(retryDelay);
           continue;
         }
-        
-        // If all retries failed, return coordinates and log final error
-        console.error('All geocoding attempts failed:', {
-          coordinates: [lat, lon],
-          totalAttempts: attempt,
-          finalError: error.message
+
+        // Final attempt failed
+        console.error('All geocoding attempts exhausted:', {
+          ...errorDetails,
+          totalAttempts: RETRY_DELAYS.length + 1
         });
         
-        return `Location ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       }
     }
   }
