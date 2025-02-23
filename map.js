@@ -46,7 +46,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       );
 
-      if (!response.ok) throw new Error('Geocoding failed');
+      if (!response.ok) {
+        const errorDetails = {
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url.split('?')[0],
+          coordinates: `${lat}, ${lon}`
+        };
+        console.error('Geocoding API Error:', {
+          type: 'API_ERROR',
+          timestamp: new Date().toISOString(),
+          details: errorDetails,
+          response: await response.text().catch(() => 'No response text')
+        });
+        throw new Error(`HTTP Error: ${response.status}`);
+      }
+
       const data = await response.json();
       
       const addr = data.address || {};
@@ -64,8 +79,23 @@ document.addEventListener('DOMContentLoaded', () => {
       
       return parts.join(', ') || `Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     } catch (error) {
-      console.error('Geocoding error:', error);
-      return `Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+      const errorLog = {
+        type: error.name || 'GEOCODING_ERROR',
+        message: error.message,
+        timestamp: new Date().toISOString(),
+        request: {
+          coordinates: [lat, lon],
+          service: 'Nominatim',
+          endpoint: '/reverse'
+        },
+        technical: {
+          stack: error.stack,
+          cause: error.cause
+        }
+      };
+
+      console.error('Geocoding failed:', errorLog);
+      return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     }
   }
 
