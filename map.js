@@ -98,44 +98,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const attempt = i + 1;
         const retryDelay = RETRY_DELAYS[i];
         
-        // Create detailed error report
-        const errorReport = {
-          requestInfo: {
-            url: url.replace(/\?.*$/, '...'), // Hide query params for security
-            method: 'GET',
-            timestamp: new Date().toISOString(),
-            targetLocation: `${lat.toFixed(6)}, ${lon.toFixed(6)}`
-          },
-          errorDetails: {
-            type: error.name,
+        // Log detailed error information
+        console.group(`🔴 Geocoding Error (${attempt}/${RETRY_DELAYS.length + 1})`);
+        console.error('Request Details:', {
+            location: `${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+            endpoint: 'nominatim.openstreetmap.org',
+            timestamp: new Date().toISOString()
+        });
+        console.error('Error Info:', {
+            name: error.name,
             message: error.message,
-            status: error.response?.status || 'Unknown',
-            code: error.code || 'Unknown'
-          },
-          retryStatus: {
+            status: error.response?.status || 'N/A'
+        });
+        console.error('Retry Status:', {
             currentAttempt: attempt,
-            totalAttempts: RETRY_DELAYS.length + 1,
-            nextRetryDelay: retryDelay || 'None',
-            remainingRetries: RETRY_DELAYS.length - i
-          }
-        };
-
-        // Log current attempt status
-        console.error(`Geocoding attempt ${attempt} of ${RETRY_DELAYS.length + 1} failed for [${errorReport.requestInfo.targetLocation}]`, errorReport);
+            remainingAttempts: RETRY_DELAYS.length - i,
+            nextDelay: retryDelay ? `${retryDelay}ms` : 'None'
+        });
+        console.groupEnd();
 
         if (i < RETRY_DELAYS.length) {
-          await sleep(retryDelay);
-          continue;
+            console.log(`⏳ Retrying in ${retryDelay}ms...`);
+            await sleep(retryDelay);
+            continue;
         }
 
-        // Log final failure with summary
-        console.error('Geocoding exhausted all retry attempts:', {
-          location: errorReport.requestInfo.targetLocation,
-          totalAttempts: attempt,
-          finalError: errorReport.errorDetails.message,
-          fallback: 'Using coordinates as location'
-        });
-        
+        console.warn('❌ All geocoding attempts failed, using coordinates as fallback');
         return `Location ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
       }
     }
